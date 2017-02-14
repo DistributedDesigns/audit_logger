@@ -3,8 +3,3 @@ rabbit:
   port: 44430
   user: "guest"
   pass: "guest"
-  queues:
-    audit: "audit_event"
-    dumplog: "dumplog"
-  exchanges:
-    quote broadcast: "quote_broadcast"

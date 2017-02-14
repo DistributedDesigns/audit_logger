@@ -42,6 +42,13 @@ var (
 	rmqConn *amqp.Connection
 )
 
+const (
+	// Named RMQ queues / exchanges
+	auditEventQ      = "audit_event"
+	dumplogQ         = "dumplog"
+	quoteBroadcastEx = "quote_broadcast"
+)
+
 func main() {
 	kingpin.Parse()
 
@@ -116,17 +123,10 @@ func initConsoleLogging() {
 // 'PascalCase' values come from 'pascalcase' in x.yaml
 var config struct {
 	Rabbit struct {
-		Host   string
-		Port   int
-		User   string
-		Pass   string
-		Queues struct {
-			Audit   string
-			Dumplog string
-		}
-		Exchanges struct {
-			QuoteBroadcast string `yaml:"quote broadcast"`
-		}
+		Host string
+		Port int
+		User string
+		Pass string
 	}
 }
 
@@ -169,35 +169,35 @@ func initRMQ() {
 	// exist before we start using them.
 	// Recieve audit events
 	_, err = ch.QueueDeclare(
-		config.Rabbit.Queues.Audit, // name
-		true,  // durable
-		false, // delete when unused
-		false, // exclusive
-		false, // no wait
-		nil,   // arguments
+		auditEventQ, // name
+		true,        // durable
+		false,       // delete when unused
+		false,       // exclusive
+		false,       // no wait
+		nil,         // arguments
 	)
 	failOnError(err, "Failed to declare a queue")
 
 	// Recieve dumplog commands
 	_, err = ch.QueueDeclare(
-		config.Rabbit.Queues.Dumplog, // name
-		true,  // durable
-		false, // delete when unused
-		false, // exclusive
-		false, // no wait
-		nil,   // arguments
+		dumplogQ, // name
+		true,     // durable
+		false,    // delete when unused
+		false,    // exclusive
+		false,    // no wait
+		nil,      // arguments
 	)
 	failOnError(err, "Failed to declare a queue")
 
 	// Catch quote updates
 	err = ch.ExchangeDeclare(
-		config.Rabbit.Exchanges.QuoteBroadcast, // name
-		amqp.ExchangeTopic,                     // type
-		true,                                   // durable
-		false,                                  // auto-deleted
-		false,                                  // internal
-		false,                                  // no-wait
-		nil,                                    // args
+		quoteBroadcastEx,   // name
+		amqp.ExchangeTopic, // type
+		true,               // durable
+		false,              // auto-deleted
+		false,              // internal
+		false,              // no-wait
+		nil,                // args
 	)
 	failOnError(err, "Failed to declare an exchange")
 }

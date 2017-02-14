@@ -27,11 +27,11 @@ func quoteCatcher(events chan<- string, done <-chan struct{}) {
 	// Receive all fresh quotes
 	freshQuotes := "*.fresh"
 	err = ch.QueueBind(
-		q.Name,                                 // name
-		freshQuotes,                            // routing key
-		config.Rabbit.Exchanges.QuoteBroadcast, // exchange
-		false, // no-wait
-		nil,   // args
+		q.Name,           // name
+		freshQuotes,      // routing key
+		quoteBroadcastEx, // exchange
+		false,            // no-wait
+		nil,              // args
 	)
 	failOnError(err, "Failed to bind a queue")
 
@@ -47,7 +47,7 @@ func quoteCatcher(events chan<- string, done <-chan struct{}) {
 	failOnError(err, "Failed to register a consumer")
 
 	go func() {
-		consoleLog.Infof(" [-] Watching for '%s' on %s", freshQuotes, config.Rabbit.Exchanges.QuoteBroadcast)
+		consoleLog.Infof(" [-] Watching for '%s' on %s", freshQuotes, quoteBroadcastEx)
 
 		for d := range msgs {
 			consoleLog.Info(" [↙] Intercepted quote TxID:", d.Headers["transactionID"])

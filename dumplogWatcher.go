@@ -6,18 +6,18 @@ func dumplogWatcher(dump chan<- struct{}, done <-chan struct{}) {
 	defer ch.Close()
 
 	msgs, err := ch.Consume(
-		config.Rabbit.Queues.Dumplog, // queue
-		"",    // consumer
-		true,  // auto-ack
-		false, // exclusive
-		false, // no-local
-		false, // no-wait
-		nil,   // args
+		dumplogQ, // queue
+		"",       // consumer
+		true,     // auto-ack
+		false,    // exclusive
+		false,    // no-local
+		false,    // no-wait
+		nil,      // args
 	)
 	failOnError(err, "Failed to register a consumer")
 
 	go func() {
-		consoleLog.Info(" [-] Monitoring", config.Rabbit.Queues.Dumplog)
+		consoleLog.Info(" [-] Monitoring", dumplogQ)
 
 		for d := range msgs {
 			userID := d.Headers["userID"].(string)
