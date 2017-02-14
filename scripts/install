@@ -12,4 +12,4 @@ if [ ! -f $GOPATH/bin/gometalinter ]; then
 fi
 
 echo "Installing git hooks"
-cp $PWD/githooks/pre-push $PWD/.git/hooks/pre-push
+ln -s $PWD/githooks/pre-push $PWD/.git/hooks/pre-push
