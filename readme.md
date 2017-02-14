@@ -2,6 +2,10 @@ Audit Logger
 =====
 Listens for fresh quotes and audit events on RMQ and writes them to an xml log file.
 
-Quotes come from the `quote_broadcast` exchange with routing keys `stock.status` where status is either `cached` or `fresh`. `*.fresh` quotes represent an external service request and are logged.
+### Monitored Queues
+#### Active
+- `audit_event` -> Something to be written to the audit log, like a `<userCommand>`. Message body is pre-formatted XML.
+-  `dumplog` -> Requests for user activity logs. User is passed in message `header["userID"]`. If the user is `admin` then a system dump is performed.
 
-Audit events come from the `audit` queue. Queue messages are pre-formatted log entries.
+#### Passive
+- `quote_broadcast` -> `#.fresh` quotes are logged as `<quoteServer>` events.

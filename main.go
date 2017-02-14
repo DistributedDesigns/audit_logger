@@ -39,33 +39,48 @@ var (
 
 	consoleLog = logging.MustGetLogger("console")
 
-	rmqConn      *amqp.Connection
-	auditlogFile *os.File
+	rmqConn *amqp.Connection
 )
 
 func main() {
 	kingpin.Parse()
+
 	initConsoleLogging()
+
 	loadConfig()
+
+	initRMQ()
+	defer rmqConn.Close()
+
 	initLogDirectory()
+	auditlogFile := createNewLogfile()
+	defer auditlogFile.Close()
 
-	// Create a new file based on the current time
-	now := time.Now()
-	auditlogFileName := fmt.Sprintf("%s/%d-%02d-%02dT%02d%02d%02d.xml",
-		*logfileDir, now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(),
-	)
+	// Write our logfile header
+	auditlogFile.WriteString("<?xml version=\"1.0\"?>\n<log>")
 
-	// Open the file for writing
-	auditlogFile, err := os.Create(auditlogFileName)
-	failOnError(err, "Could not create logfile")
-	defer func() {
-		// Write the footer and close file
-		auditlogFile.WriteString("</log>\n")
-		auditlogFile.Close()
+	events := make(chan string)
+	dump := make(chan bool)
+	done := make(chan bool)
+
+	go quoteCatcher(events, done)
+	go auditEventCatcher(events, done)
+	go dumplogWatcher(dump, done)
+	go func() {
+		// write events as they're caught
+		for event := range events {
+			auditlogFile.WriteString(event)
+		}
 	}()
 
-	// Write the logfile header
-	auditlogFile.WriteString("<?xml version=\"1.0\"?>\n<log>\n")
+	// run go-routines until dump is sent
+	<-dump
+
+	// Halts all go-routines
+	close(done)
+
+	// Write the footer to the logfile before we close it on exit
+	auditlogFile.WriteString("\n</log>\n")
 }
 
 func failOnError(err error, msg string) {
@@ -133,5 +148,72 @@ func initLogDirectory() {
 			failOnError(dirErr, "Couldn't create log directory")
 		}
 	}
+}
 
+func initRMQ() {
+	rabbitAddress := fmt.Sprintf("amqp://%s:%s@%s:%d",
+		config.Rabbit.User, config.Rabbit.Pass,
+		config.Rabbit.Host, config.Rabbit.Port,
+	)
+
+	var err error
+	rmqConn, err = amqp.Dial(rabbitAddress)
+	failOnError(err, "Failed to rmqConnect to RabbitMQ")
+	// closed in main()
+
+	ch, err := rmqConn.Channel()
+	failOnError(err, "Failed to open a channel")
+	defer ch.Close()
+
+	// Make sure all of the expected RabbitMQ exchanges and queues
+	// exist before we start using them.
+	// Recieve audit events
+	_, err = ch.QueueDeclare(
+		config.Rabbit.Queues.Audit, // name
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no wait
+		nil,   // arguments
+	)
+	failOnError(err, "Failed to declare a queue")
+
+	// Recieve dumplog commands
+	_, err = ch.QueueDeclare(
+		config.Rabbit.Queues.Dumplog, // name
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no wait
+		nil,   // arguments
+	)
+	failOnError(err, "Failed to declare a queue")
+
+	// Catch quote updates
+	err = ch.ExchangeDeclare(
+		config.Rabbit.Exchanges.QuoteBroadcast, // name
+		amqp.ExchangeTopic,                     // type
+		true,                                   // durable
+		false,                                  // auto-deleted
+		false,                                  // internal
+		false,                                  // no-wait
+		nil,                                    // args
+	)
+	failOnError(err, "Failed to declare an exchange")
+}
+
+func createNewLogfile() *os.File {
+	// Create a new file based on the current time
+	now := time.Now()
+	auditlogFileName := fmt.Sprintf("%s/%d-%02d-%02dT%02d%02d%02d.xml",
+		*logfileDir, now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(),
+	)
+
+	// Open the file for writing
+	auditlogFile, err := os.Create(auditlogFileName)
+	failOnError(err, "Could not create logfile")
+
+	consoleLog.Info(" [-] Writing log to", auditlogFileName)
+
+	return auditlogFile
 }
