@@ -1,0 +1,9 @@
+rabbit:
+  host: "localhost"
+  port: 44430
+  user: "guest"
+  pass: "guest"
+  queues:
+    audit: "audit"
+  exchanges:
+    quote broadcast: "quote_broadcast"
