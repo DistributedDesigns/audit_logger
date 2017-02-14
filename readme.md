@@ -1,5 +1,7 @@
 Audit Logger
 =====
+[![Build Status](https://travis-ci.org/DistributedDesigns/audit_logger.svg?branch=master)](https://travis-ci.org/DistributedDesigns/audit_logger)
+
 Listens for fresh quotes and audit events on RMQ and writes them to an xml log file.
 
 ## Installing
