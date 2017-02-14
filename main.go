@@ -60,8 +60,8 @@ func main() {
 	auditlogFile.WriteString("<?xml version=\"1.0\"?>\n<log>")
 
 	events := make(chan string)
-	dump := make(chan bool)
-	done := make(chan bool)
+	dump := make(chan struct{})
+	done := make(chan struct{})
 
 	go quoteCatcher(events, done)
 	go auditEventCatcher(events, done)

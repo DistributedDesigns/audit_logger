@@ -1,6 +1,6 @@
 package main
 
-func dumplogWatcher(dump chan<- bool, done <-chan bool) {
+func dumplogWatcher(dump chan<- struct{}, done <-chan struct{}) {
 	ch, err := rmqConn.Channel()
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
@@ -24,7 +24,7 @@ func dumplogWatcher(dump chan<- bool, done <-chan bool) {
 			if userID == "admin" {
 				consoleLog.Notice(" [!] Admin dump triggered")
 				// TODO: the dump
-				dump <- true
+				dump <- struct{}{}
 			} else {
 				consoleLog.Info(" [x] Dump triggered for", userID)
 				// TODO: the dump

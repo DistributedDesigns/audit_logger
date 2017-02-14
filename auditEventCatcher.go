@@ -1,6 +1,6 @@
 package main
 
-func auditEventCatcher(events chan<- string, done <-chan bool) {
+func auditEventCatcher(events chan<- string, done <-chan struct{}) {
 	ch, err := rmqConn.Channel()
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
