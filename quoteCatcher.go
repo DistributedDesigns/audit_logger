@@ -50,7 +50,6 @@ func quoteCatcher(events chan<- string, done <-chan struct{}) {
 		consoleLog.Infof(" [-] Watching for '%s' on %s", freshQuotes, quoteBroadcastEx)
 
 		for d := range msgs {
-			consoleLog.Info(" [↙] Intercepted quote TxID:", d.Headers["transactionID"])
 			events <- quoteToAuditLog(string(d.Body), d.Headers)
 		}
 	}()
@@ -61,10 +60,6 @@ func quoteCatcher(events chan<- string, done <-chan struct{}) {
 func quoteToAuditLog(s string, headers amqp.Table) string {
 	// Optimistic conversion :/
 	quote, _ := types.ParseQuote(s)
-
-	// Will default to 0 if header is missing
-	// Optimistic conversion :/
-	transactionID := headers["transactionID"].(int64)
 
 	// More optimistic conversion :/
 	server := headers["serviceID"].(string)
@@ -85,9 +80,11 @@ func quoteToAuditLog(s string, headers amqp.Table) string {
 		<quoteServerTime>%d</quoteServerTime>
 		<cryptokey>%s</cryptokey>
 	</quoteServer>`,
-		unixMillisec, server, transactionID, quote.Price.ToFloat(),
+		unixMillisec, server, quote.ID, quote.Price.ToFloat(),
 		quote.Stock, quote.UserID, quote.Timestamp.Unix(), quote.Cryptokey,
 	)
+
+	consoleLog.Info(" [↙] Intercepted quote TxID:", quote.ID)
 
 	return xmlElement
 }
