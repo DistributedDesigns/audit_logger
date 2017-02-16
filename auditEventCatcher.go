@@ -20,7 +20,7 @@ func auditEventCatcher(events chan<- string, done <-chan struct{}) {
 		consoleLog.Info(" [-] Monitoring", auditEventQ)
 
 		for d := range msgs {
-			consoleLog.Info(" [↓] Audit event for TxID:", d.Headers["transactionID"])
+			consoleLog.Info(" [↓]", d.Headers["name"])
 			events <- string(d.Body)
 		}
 	}()
