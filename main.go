@@ -1,11 +1,14 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/op/go-logging"
 	"github.com/streadway/amqp"
@@ -40,6 +43,7 @@ var (
 	consoleLog = logging.MustGetLogger("console")
 
 	rmqConn *amqp.Connection
+	db      *sql.DB
 )
 
 const (
@@ -58,6 +62,9 @@ func main() {
 
 	initRMQ()
 	defer rmqConn.Close()
+
+	initDB()
+	defer db.Close()
 
 	initLogDirectory()
 	auditlogFile := createNewLogfile()
@@ -128,6 +135,14 @@ var config struct {
 		User string
 		Pass string
 	}
+
+	DB struct {
+		Host     string
+		Port     int
+		User     string
+		Password string
+		AuditDB  string `yaml:"auditdb"`
+	} `yaml:"database"`
 }
 
 func loadConfig() {
@@ -200,6 +215,23 @@ func initRMQ() {
 		nil,                // args
 	)
 	failOnError(err, "Failed to declare an exchange")
+}
+
+func initDB() {
+	dbConnection := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+		config.DB.User, config.DB.Password, config.DB.Host, config.DB.Port, config.DB.AuditDB,
+	)
+
+	var err error
+	db, err = sql.Open("mysql", dbConnection)
+	failOnError(err, "Could not open DB connection")
+	// closed in main()
+
+	// TODO: connection pooling and config???
+
+	// Test to see if connection works
+	err = db.Ping()
+	failOnError(err, "Could not ping DB")
 }
 
 func createNewLogfile() *os.File {

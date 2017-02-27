@@ -3,3 +3,10 @@ rabbit:
   port: 44430
   user: "guest"
   pass: "guest"
+
+database:
+  host: "localhost"
+  port: 44432
+  user: "mysqladmin"
+  password: "mysqladmin"
+  auditdb: "audit"
