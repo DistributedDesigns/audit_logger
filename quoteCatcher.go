@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -9,7 +10,7 @@ import (
 	"github.com/streadway/amqp"
 )
 
-func quoteCatcher(events chan<- string, done <-chan struct{}) {
+func quoteCatcher() {
 	ch, err := rmqConn.Channel()
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
@@ -46,20 +47,36 @@ func quoteCatcher(events chan<- string, done <-chan struct{}) {
 	)
 	failOnError(err, "Failed to register a consumer")
 
+	db, err := sql.Open("postgres", dbConnAddr)
+	failOnError(err, "Could not open DB connection")
+	defer db.Close()
+
+	insertLogStmt, err := db.Prepare(insertLogQuery)
+	failOnError(err, "Could not prepare log insert statement")
+	defer insertLogStmt.Close()
+
 	go func() {
 		consoleLog.Infof(" [-] Watching for '%s' on %s", freshQuotes, quoteBroadcastEx)
 
 		for d := range msgs {
-			events <- quoteToAuditLog(string(d.Body), d.Headers)
+			ae := quoteToAuditEvent(string(d.Body), d.Headers)
+			_, err := insertLogStmt.Exec(ae.UserID, ae.ID, ae.EventType, ae.Content)
+			if err != nil {
+				// Log error and wait for next
+				consoleLog.Error("Problem inserting quote:", err)
+				break
+			}
 		}
 	}()
 
 	<-done
 }
 
-func quoteToAuditLog(s string, headers amqp.Table) string {
+func quoteToAuditEvent(s string, headers amqp.Table) types.AuditEvent {
 	// Optimistic conversion :/
 	quote, _ := types.ParseQuote(s)
+
+	consoleLog.Info(" [↙] Intercepted quote TxID:", quote.ID)
 
 	// More optimistic conversion :/
 	server := headers["serviceID"].(string)
@@ -85,7 +102,10 @@ func quoteToAuditLog(s string, headers amqp.Table) string {
 		quote.Stock, quote.UserID, quoteMillisec, quote.Cryptokey,
 	)
 
-	consoleLog.Info(" [↙] Intercepted quote TxID:", quote.ID)
-
-	return xmlElement
+	return types.AuditEvent{
+		UserID:    quote.UserID,
+		ID:        quote.ID,
+		EventType: "quote",
+		Content:   xmlElement,
+	}
 }

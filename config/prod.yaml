@@ -3,3 +3,25 @@ rabbit:
   port: 44430
   user: "guest"
   pass: "guest"
+
+database:
+  host: "localhost"
+  port: 44432
+  user: "pgadmin"
+  password: "pgadmin"
+  auditdb: "audit"
+  sslmode: "disable"
+
+redis:
+  host: "localhost"
+  port: 44431
+  max_idle_connections: 5
+  max_active_connections: 0
+  idle_timeout: 30
+  key_prefix: "audit"
+
+workers:
+  rmq: 5
+  db:
+    insert: 5
+    dumplog: 1
