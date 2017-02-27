@@ -10,6 +10,9 @@ git clone https://github.com/DistributedDesigns/audit_logger.git
 
 .scripts/install
 
+# Start MySQL
+make run
+
 # Assumes there's a RMQ instance running in docker
 # Run with one of
 $GOPATH/bin/audit_logger
@@ -32,3 +35,4 @@ Sending messages to control / debug the logger is useful. You can do this throug
 ### Notes
 - Logger will write until it receives a message on the `dumplog` queue with the header `userID == admin`. When it receives this message it writes the footer and closes the session log file.
 - Validate logs with `./script/validate logs/<your-log>.xml`
+- The MySQL root password is randomly generated. If you want to see what it is: `docker logs mysql-trading 2>/dev/null | grep GENERATED`
