@@ -42,6 +42,9 @@ var (
 
 	consoleLog = logging.MustGetLogger("console")
 
+	// global channels
+	logs = make(chan logItem)
+
 	rmqConn *amqp.Connection
 	db      *sql.DB
 )
@@ -80,6 +83,7 @@ func main() {
 	go quoteCatcher(events, done)
 	go auditEventCatcher(events, done)
 	go dumplogWatcher(dump, done)
+	go insertLogs(done)
 	go func() {
 		// write events as they're caught
 		for event := range events {

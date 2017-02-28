@@ -1,5 +1,7 @@
 package main
 
+import "github.com/streadway/amqp"
+
 func auditEventCatcher(events chan<- string, done <-chan struct{}) {
 	ch, err := rmqConn.Channel()
 	failOnError(err, "Failed to open a channel")
@@ -22,8 +24,17 @@ func auditEventCatcher(events chan<- string, done <-chan struct{}) {
 		for d := range msgs {
 			consoleLog.Info(" [↓]", d.Headers["name"])
 			events <- string(d.Body)
+			logs <- auditEventToLog(d)
 		}
 	}()
 
 	<-done
+}
+
+func auditEventToLog(d amqp.Delivery) logItem {
+	return logItem{
+		userID:  d.Headers["userID"].(string),
+		logType: "command",
+		content: string(d.Body),
+	}
 }

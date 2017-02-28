@@ -51,10 +51,45 @@ func quoteCatcher(events chan<- string, done <-chan struct{}) {
 
 		for d := range msgs {
 			events <- quoteToAuditLog(string(d.Body), d.Headers)
+			logs <- quoteToLog(d)
 		}
 	}()
 
 	<-done
+}
+
+func quoteToLog(d amqp.Delivery) logItem {
+	// Optimistic conversion :/
+	quote, _ := types.ParseQuote(string(d.Body))
+
+	// More optimistic conversion :/
+	server := d.Headers["serviceID"].(string)
+	if server == "" {
+		server = "UNKNOWN"
+	}
+
+	unixMillisec := time.Now().UnixNano() / 1e6
+
+	xmlElement := fmt.Sprintf(`
+	<quoteServer>
+		<timestamp>%d</timestamp>
+		<server>%s</server>
+		<transactionNum>%d</transactionNum>
+		<price>%.2f</price>
+		<stockSymbol>%s</stockSymbol>
+		<username>%s</username>
+		<quoteServerTime>%d</quoteServerTime>
+		<cryptokey>%s</cryptokey>
+	</quoteServer>`,
+		unixMillisec, server, quote.ID, quote.Price.ToFloat(),
+		quote.Stock, quote.UserID, quote.Timestamp.Unix(), quote.Cryptokey,
+	)
+
+	return logItem{
+		userID:  quote.UserID,
+		logType: "quote",
+		content: xmlElement,
+	}
 }
 
 func quoteToAuditLog(s string, headers amqp.Table) string {
