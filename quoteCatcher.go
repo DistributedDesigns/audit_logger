@@ -67,7 +67,8 @@ func quoteToAuditLog(s string, headers amqp.Table) string {
 		server = "UNKNOWN"
 	}
 
-	unixMillisec := time.Now().UnixNano() / 1e6
+	nowMillisec := time.Now().UnixNano() / 1e6
+	quoteMillisec := quote.Timestamp.UnixNano() / 1e6
 
 	xmlElement := fmt.Sprintf(`
 	<quoteServer>
@@ -80,8 +81,8 @@ func quoteToAuditLog(s string, headers amqp.Table) string {
 		<quoteServerTime>%d</quoteServerTime>
 		<cryptokey>%s</cryptokey>
 	</quoteServer>`,
-		unixMillisec, server, quote.ID, quote.Price.ToFloat(),
-		quote.Stock, quote.UserID, quote.Timestamp.Unix(), quote.Cryptokey,
+		nowMillisec, server, quote.ID, quote.Price.ToFloat(),
+		quote.Stock, quote.UserID, quoteMillisec, quote.Cryptokey,
 	)
 
 	consoleLog.Info(" [↙] Intercepted quote TxID:", quote.ID)
