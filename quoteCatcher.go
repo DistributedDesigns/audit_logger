@@ -69,6 +69,7 @@ func quoteToLog(d amqp.Delivery) logItem {
 	}
 
 	unixMillisec := time.Now().UnixNano() / 1e6
+	quoteMillisec := quote.Timestamp.UnixNano() / 1e6
 
 	xmlElement := fmt.Sprintf(`
 	<quoteServer>
@@ -82,7 +83,7 @@ func quoteToLog(d amqp.Delivery) logItem {
 		<cryptokey>%s</cryptokey>
 	</quoteServer>`,
 		unixMillisec, server, quote.ID, quote.Price.ToFloat(),
-		quote.Stock, quote.UserID, quote.Timestamp.Unix(), quote.Cryptokey,
+		quote.Stock, quote.UserID, quoteMillisec, quote.Cryptokey,
 	)
 
 	return logItem{
