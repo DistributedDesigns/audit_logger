@@ -19,6 +19,10 @@ $GOPATH/bin/audit_logger
 go run *.go
 ```
 
+### Prod deploy notes
+CentOS enables SE linux by default. This prevents `sql/auditInit.sql` from running on startup. The solution, as will all security inconveniences, is to disable security!
+- `su -c "setenforce 0"`
+
 ### Monitored Queues
 #### Active
 Other services intentionally create messages to send to the logger on these queues.
