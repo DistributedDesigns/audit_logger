@@ -1,0 +1,30 @@
+version: '2'
+
+services:
+
+  db:
+    image: postgres:9.6.2
+    container_name: db-trading
+    ports:
+      - "44432:5432"
+    volumes:
+      - ./sql/:/docker-entrypoint-initdb.d/
+    environment:
+      POSTGRES_USER: pgadmin
+      POSTGRES_PASSWORD: pgadmin
+      POSTGRES_DB: audit
+    networks:
+      - trading
+
+  redis:
+    image: redis:3.2.7
+    container_name: redis-trading
+    ports:
+      - "44431:6379"
+    networks:
+      - trading
+
+networks:
+
+  trading:
+    driver: bridge

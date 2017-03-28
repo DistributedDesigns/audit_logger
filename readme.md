@@ -10,17 +10,24 @@ git clone https://github.com/DistributedDesigns/audit_logger.git
 
 .scripts/install
 
-# Assumes there's a RMQ instance running in docker
+# Start dependent services
+# Assumes there's an RMQ running somewhere
+docker-compose up
+
 # Run with one of
 $GOPATH/bin/audit_logger
 go run *.go
 ```
 
+### Prod deploy notes
+CentOS enables SE linux by default. This prevents `sql/auditInit.sql` from running on startup. The solution, as will all security inconveniences, is to disable security!
+- `su -c "setenforce 0"`
+
 ### Monitored Queues
 #### Active
 Other services intentionally create messages to send to the logger on these queues.
-- `audit_event` -> Something to be written to the audit log, like a `<userCommand>`. Message body is pre-formatted XML.
--  `dumplog` -> Requests for user activity logs. User is passed in message `header["userID"]`. If the user is `admin` then a system dump is performed.
+- `audit_event` -> Something to be written to the audit log, like a `<userCommand>`. Message is a serialized `AuditEvent`.
+-  `dumplog` -> Requests for user activity logs. Message is a serialized `DumplogRequest`.
 
 #### Passive
 The logger snoops on these messages and records them.
@@ -30,5 +37,5 @@ The logger snoops on these messages and records them.
 Sending messages to control / debug the logger is useful. You can do this through the [Management interface](http://localhost:8080/#/) or with the [`rabbitmqadmin` CLI](http://localhost:8080/cli). You can also generate quote traffic for snooping with the `fake_quote_server`, `quote_manager` and `rmq_proto` repos.
 
 ### Notes
-- Logger will write until it receives a message on the `dumplog` queue with the header `userID == admin`. When it receives this message it writes the footer and closes the session log file.
+- Insertion is slow! With a high volume of logs it takes a while for PG to chew through the backlog of events in Redis.
 - Validate logs with `./script/validate logs/<your-log>.xml`

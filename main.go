@@ -1,12 +1,15 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/garyburd/redigo/redis"
+	_ "github.com/lib/pq"
 	"github.com/op/go-logging"
 	"github.com/streadway/amqp"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
@@ -15,31 +18,15 @@ import (
 
 // Globals
 var (
-	logLevels = []string{"CRITICAL", "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG"}
-	logLevel  = kingpin.
-			Flag("log-level", fmt.Sprintf("Minimum level for logging to the console. Must be one of: %s", strings.Join(logLevels, ", "))).
-			Default("WARNING").
-			Short('l').
-			Enum(logLevels...)
-	serviceID = kingpin.
-			Flag("service-id", "Logging name for the service").
-			Default("audit").
-			Short('s').
-			String()
-	configFile = kingpin.
-			Flag("config", "YAML file with service config").
-			Default("./config/dev.yaml").
-			Short('c').
-			ExistingFile()
-	logfileDir = kingpin.
-			Flag("log-directory", "Directory that will hold audit logs").
-			Default("logs").
-			Short('d').
-			String()
+	dump = make(chan struct{})
+	done = make(chan struct{})
 
 	consoleLog = logging.MustGetLogger("console")
 
-	rmqConn *amqp.Connection
+	auditEventKey string
+	dbConnAddr    string
+	redisPool     *redis.Pool
+	rmqConn       *amqp.Connection
 )
 
 const (
@@ -50,44 +37,36 @@ const (
 )
 
 func main() {
-	kingpin.Parse()
+	loadConfig()
 
 	initConsoleLogging()
-
-	loadConfig()
 
 	initRMQ()
 	defer rmqConn.Close()
 
+	initDB()
+
+	initRedis()
+
 	initLogDirectory()
-	auditlogFile := createNewLogfile()
-	defer auditlogFile.Close()
 
-	// Write our logfile header
-	auditlogFile.WriteString("<?xml version=\"1.0\"?>\n<log>")
+	// Start worker pools
+	for id := 1; id <= config.Workers.RMQ; id++ {
+		go auditEventWorker(id)
+	}
 
-	events := make(chan string)
-	dump := make(chan struct{})
-	done := make(chan struct{})
+	for id := 1; id <= config.Workers.DB.Insert; id++ {
+		go logInsertWorker(id)
+	}
 
-	go quoteCatcher(events, done)
-	go auditEventCatcher(events, done)
-	go dumplogWatcher(dump, done)
-	go func() {
-		// write events as they're caught
-		for event := range events {
-			auditlogFile.WriteString(event)
-		}
-	}()
+	for id := 1; id <= config.Workers.DB.Dumplog; id++ {
+		go dumplogWatcher(id)
+	}
 
-	// run go-routines until dump is sent
-	<-dump
+	go quoteCatcher()
 
-	// Halts all go-routines
-	close(done)
-
-	// Write the footer to the logfile before we close it on exit
-	auditlogFile.WriteString("\n</log>\n")
+	//TODO: catch OS interrupt and shut down nicely
+	<-done
 }
 
 func failOnError(err error, msg string) {
@@ -103,12 +82,12 @@ func initConsoleLogging() {
 
 	// Add output formatting
 	var consoleFormat = logging.MustStringFormatter(
-		`%{time:15:04:05.000} %{color}▶ %{level:8s}%{color:reset} %{id:03d} %{message} %{shortfile}`,
+		`%{time:15:04:05.000} %{color}▶ %{level:8s}%{color:reset} %{id:03d} %{message} (%{shortfile})`,
 	)
 	consoleBackendFormatted := logging.NewBackendFormatter(consoleBackend, consoleFormat)
 
 	// Add leveled logging
-	level, err := logging.LogLevel(*logLevel)
+	level, err := logging.LogLevel(config.env.logLevel)
 	if err != nil {
 		fmt.Println("Bad log level. Using default level of ERROR")
 	}
@@ -122,28 +101,96 @@ func initConsoleLogging() {
 // Holds values from <config>.yaml.
 // 'PascalCase' values come from 'pascalcase' in x.yaml
 var config struct {
+	env struct {
+		logLevel   string
+		serviceID  string
+		configFile string
+		logFileDir string
+	}
+
+	// Yaml stuff, has to be Exported
 	Rabbit struct {
 		Host string
 		Port int
 		User string
 		Pass string
 	}
+
+	DB struct {
+		Host     string
+		Port     int
+		SSLmode  string `yaml:"sslmode"`
+		User     string
+		Password string
+		AuditDB  string `yaml:"auditdb"`
+	} `yaml:"database"`
+
+	Redis struct {
+		Host        string
+		Port        int
+		MaxIdle     int    `yaml:"max_idle_connections"`
+		MaxActive   int    `yaml:"max_active_connections"`
+		IdleTimeout int    `yaml:"idle_timeout"`
+		KeyPrefix   string `yaml:"key_prefix"`
+	}
+
+	Workers struct {
+		RMQ int `yaml:"rmq"`
+		DB  struct {
+			Insert  int
+			Dumplog int
+		} `yaml:"db"`
+	}
 }
 
 func loadConfig() {
+	app := kingpin.New("audit_logger", "Store records for safe keeping")
+
+	var logLevels = []string{"CRITICAL", "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG"}
+
+	app.Flag("log-level", fmt.Sprintf("Minimum level for logging to the console. Must be one of: %s", strings.Join(logLevels, ", "))).
+		Default("WARNING").
+		Short('l').
+		EnumVar(&config.env.logLevel, logLevels...)
+
+	app.Flag("service-id", "Logging name for the service").
+		Default("audit").
+		Short('s').
+		StringVar(&config.env.serviceID)
+
+	app.Flag("config", "YAML file with service config").
+		Default("./config/dev.yaml").
+		Short('c').
+		ExistingFileVar(&config.env.configFile)
+
+	app.Flag("log-directory", "Directory that will hold audit logs").
+		Default("logs").
+		Short('d').
+		StringVar(&config.env.logFileDir)
+
+	kingpin.MustParse(app.Parse(os.Args[1:]))
+
 	// Load the yaml file
-	data, err := ioutil.ReadFile(*configFile)
-	failOnError(err, "Could not read file")
+	data, err := ioutil.ReadFile(config.env.configFile)
+	if err != nil {
+		panic(err)
+	}
 
 	err = yaml.Unmarshal(data, &config)
-	failOnError(err, "Could not unmarshal config")
+	if err != nil {
+		panic(err)
+	}
+
+	// Set globals
+	auditEventKey = config.Redis.KeyPrefix + ":pendingEvents"
 }
 
 func initLogDirectory() {
 	// Create the output directory, if we need to
-	if _, err := os.Stat(*logfileDir); os.IsNotExist(err) {
-		consoleLog.Debugf("Creating log directory at ./%s", *logfileDir)
-		if dirErr := os.Mkdir(*logfileDir, 0755); dirErr != nil {
+	logDir := config.env.logFileDir
+	if _, err := os.Stat(logDir); os.IsNotExist(err) {
+		consoleLog.Debugf("Creating log directory at ./%s", logDir)
+		if dirErr := os.Mkdir(logDir, 0755); dirErr != nil {
 			// Don't bother running if we can't generate a log file.
 			failOnError(dirErr, "Couldn't create log directory")
 		}
@@ -202,18 +249,38 @@ func initRMQ() {
 	failOnError(err, "Failed to declare an exchange")
 }
 
-func createNewLogfile() *os.File {
-	// Create a new file based on the current time
-	now := time.Now()
-	auditlogFileName := fmt.Sprintf("%s/%d-%02d-%02dT%02d%02d%02d.xml",
-		*logfileDir, now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(),
+func initDB() {
+	dbConnAddr = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		config.DB.User, config.DB.Password, config.DB.Host, config.DB.Port,
+		config.DB.AuditDB, config.DB.SSLmode,
 	)
 
-	// Open the file for writing
-	auditlogFile, err := os.Create(auditlogFileName)
-	failOnError(err, "Could not create logfile")
+	// Get a one-time connection for testing
+	db, err := sql.Open("postgres", dbConnAddr)
+	failOnError(err, "Could not open DB connection")
+	defer db.Close()
 
-	consoleLog.Info(" [-] Writing log to", auditlogFileName)
+	// TODO: connection pooling and config???
 
-	return auditlogFile
+	// Test to see if connection works
+	err = db.Ping()
+	failOnError(err, "Could not ping DB")
+}
+
+func initRedis() {
+	redisAddress := fmt.Sprintf("%s:%d", config.Redis.Host, config.Redis.Port)
+
+	redisPool = &redis.Pool{
+		MaxIdle:     config.Redis.MaxIdle,
+		MaxActive:   config.Redis.MaxActive,
+		IdleTimeout: time.Second * time.Duration(config.Redis.IdleTimeout),
+		Dial:        func() (redis.Conn, error) { return redis.Dial("tcp", redisAddress) },
+	}
+
+	// Test if we can talk to redis
+	conn := redisPool.Get()
+	defer conn.Close()
+
+	_, err := conn.Do("PING")
+	failOnError(err, "Could not establish connection with Redis")
 }
