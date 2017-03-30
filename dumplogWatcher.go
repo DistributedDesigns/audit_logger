@@ -49,6 +49,8 @@ func generateDumplog(db *sql.DB, csv string) {
 		return
 	}
 
+	consoleLog.Notice(" [!] Starting Dumplog for", dr.UserID)
+
 	// Filter so users only see their messages but admins see everyone's
 	var userFilter string // default value is ''
 	if dr.UserID != "admin" {
@@ -99,7 +101,7 @@ func generateDumplog(db *sql.DB, csv string) {
 		return
 	}
 
-	consoleLog.Noticef(" [✔] Dumplog for %s at %s", dr.UserID, dr.Filename)
+	consoleLog.Noticef(" [✔] Dumplog for %s at %s", dr.UserID, logfile.Name())
 }
 
 func createNewLogfile(dr types.DumplogRequest) *os.File {
